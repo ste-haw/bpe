@@ -4,6 +4,7 @@
 <title>Bongo's Pizza Empire</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800&display=swap">
 <style>
@@ -90,7 +91,30 @@
     body.touch #slots { gap:4px; bottom:calc(8px + env(safe-area-inset-bottom, 0px)); }
     body.touch .slot { width:42px; height:42px; padding:3px; border-radius:8px; }
     body.touch #alert { top:calc(50px + env(safe-area-inset-top, 0px)); font-size:24px; padding:7px 16px; }
-    body.touch #phone { bottom:calc(60px + env(safe-area-inset-bottom, 0px)); width:170px; padding:9px; }
+    body.touch #phone { top:calc(46px + env(safe-area-inset-top, 0px)); bottom:auto; width:170px; padding:9px; }
+    /* phones sideways: the top bar slims down, and the close-up panels become two narrow side rails either side of the tubs, so nothing sits over the work */
+    body.touch h1 { display:none; }
+    body.touch .ticket { gap:8px; padding:3px 8px; }
+    body.touch #next { max-width:150px; }
+    body.touch .oslot { width:46px; height:22px; font-size:9px; line-height:18px; }
+    body.touch #toast { font-size:17px; padding:6px 12px; }
+    body.touch.fp #toast, body.touch.oven #toast, body.touch.boxfp #toast { top:calc(6px + env(safe-area-inset-top, 0px)); bottom:auto; }
+    body.touch { --rail:max(96px, calc((100vw - 118vh) / 2 - max(8px, env(safe-area-inset-left, 0px)) - 6px)); }
+    @supports (height:1dvh) { body.touch { --rail:max(96px, calc((100vw - 118dvh) / 2 - max(8px, env(safe-area-inset-left, 0px)) - 6px)); } }
+    body.touch .close { top:calc(6px + env(safe-area-inset-top, 0px)); left:max(8px, env(safe-area-inset-left, 0px)); transform:none; width:var(--rail); box-sizing:border-box; padding:7px 8px; max-height:calc(100% - 52px); overflow-y:auto; }
+    body.touch .close h2 { display:block; font-size:14px; line-height:1.1; }
+    body.touch .close h2 small { display:block; font-size:10px; line-height:1.3; }
+    body.touch #fpList { display:block; margin:4px 0 0; padding:4px 0 0; border-bottom:0; font-size:12px; line-height:1.3; }
+    body.touch #ovenMsg, body.touch #boxMsg { margin:4px 0 0; font-size:12px; line-height:1.25; }
+    body.touch .close .btns { position:fixed; right:max(8px, env(safe-area-inset-right, 0px)); top:calc(6px + env(safe-area-inset-top, 0px)); width:var(--rail); flex-direction:column; gap:7px; }
+    body.touch .close .btns button { font-size:13px; line-height:1.1; padding:11px 6px; width:100%; }
+    body.touch .otag { min-width:70px; padding:3px 5px; font-size:11px; }
+    /* the oven's floating labels pile up on a small screen, so in the oven they line up under Step back as big buttons */
+    body.touch.oven .otag { left:auto !important; right:max(8px, env(safe-area-inset-right, 0px)); transform:none; width:var(--rail); min-width:0; box-sizing:border-box; padding:6px; }
+    body.touch.oven .otag.empty { opacity:.85; }
+    body.touch.oven .otag[data-slot="0"] { top:calc(56px + env(safe-area-inset-top, 0px)) !important; }
+    body.touch.oven .otag[data-slot="1"] { top:calc(118px + env(safe-area-inset-top, 0px)) !important; }
+    body.touch.oven .otag[data-slot="2"] { top:calc(180px + env(safe-area-inset-top, 0px)) !important; }
   }
   @media (orientation:portrait) and (max-width:600px) {
     body.touch #turn { position:fixed; inset:0; z-index:30; display:grid; place-content:center; justify-items:center; gap:16px; background:var(--tomato); color:#fff; font:400 26px/1.1 var(--display); text-align:center; padding:24px; }
@@ -2884,12 +2908,12 @@ let drag = null;
 function startDrag(i, e) {
   if (!doughReady(making.pizza)) { needDough(); return; }
   pick = i; updateFp(); fx.push({ m:tubs[i].g, t:0, kind:"bob" });
-  drag = { key:tubs[i].key, ghost:makeGhost(tubs[i].key), over:false, lx:0, lz:0 };
+  drag = { key:tubs[i].key, tub:i, from:[e.clientX, e.clientY], ghost:makeGhost(tubs[i].key), over:false, lx:0, lz:0 };
   document.body.classList.add("dragging"); dropRing.visible = true;
   sfx("scoop"); moveDrag(e);
 }
-function moveDrag(e) {
-  setRay(e); if (!ray.ray.intersectPlane(dropPlane, hit)) return;
+function moveDrag(e) {                // on a phone what you're dragging floats above your fingertip, or your finger would hide it
+  setRay(TOUCH ? { clientX:e.clientX, clientY:e.clientY - 48 } : e); if (!ray.ray.intersectPlane(dropPlane, hit)) return;
   dragTo(hit.x, hit.z);
 }
 function startPadDrag(i) {
@@ -3171,12 +3195,17 @@ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), groundPlane = new 
 let downAt = null, target = null, autoUse = null;
 const tubMeshes = []; tubs.forEach(t => t.g.traverse(o => { if (o.isMesh) tubMeshes.push(o); }));
 function setRay(e) { const r = canvas.getBoundingClientRect(); ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ndc, camera); }
+function tubUnder(e) {               // tubs are small on a phone, so a near miss still counts
+  for (const [dx, dy] of TOUCH ? [[0, 0], [0, -14], [0, 14], [-14, 0], [14, 0]] : [[0, 0]]) {
+    setRay({ clientX:e.clientX + dx, clientY:e.clientY + dy }); const h = ray.intersectObjects(tubMeshes, false)[0]; if (h) return h; }
+  return null;
+}
 canvas.addEventListener("pointerdown", e => {
   downAt = [e.clientX, e.clientY]; unlockAudio();
   if (mode === "boxfp") { if (hoverLine(e)) cutLine(); return; }
   if (mode === "walk" && fpCam) { if (fpLook.dragging) return; canvas.setPointerCapture(e.pointerId); Object.assign(fpLook, { dragging:true, id:e.pointerId, x:e.clientX, y:e.clientY, moved:0 }); return; }
   if (mode === "fp" && !camTween && making) {
-    setRay(e); const h = ray.intersectObjects(tubMeshes, false)[0];
+    const h = tubUnder(e);
     if (h) { canvas.setPointerCapture(e.pointerId); startDrag(h.object.userData.tub, e); }
     else if (!doughReady(making.pizza) && ray.intersectObject(making.pizza, true).length) pressDough();   // thump the dough
   }
@@ -3199,6 +3228,7 @@ canvas.addEventListener("pointermove", e => {
   } else canvas.style.cursor = "";
 });
 canvas.addEventListener("pointerup", e => {
+  if (drag && TOUCH && Math.hypot(e.clientX - drag.from[0], e.clientY - drag.from[1]) < 14) { const i = drag.tub; endDrag(false); quickHandful(i); return; }   // a tap on a tub just puts some on
   if (drag) { moveDrag(e); endDrag(true); return; }
   if (mode === "boxfp") return;
   if (fpLook.dragging) { if (e.pointerId !== fpLook.id) return; fpLook.dragging = false; if (!TOUCH && fpLook.moved < 6 && mode === "walk") { interact(); } return; }   // on a phone the big button does this, so looking round can't set anything off
